@@ -31,9 +31,11 @@ const waClient = new Client({
 });
 
 waClient.on('qr', (qr) => {
-    console.log('\n📱 امسح كود QR التالي لربط الواتساب:');
-    qrcode.generate(qr, { small: true });
-});
+       console.log('\n==================================================');
+       console.log('📱 افتح هذا الرابط في متصفحك للحصول على صورة كود QR واضحة:');
+       console.log(`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`);
+       console.log('==================================================\n');
+   });
 
 waClient.on('ready', () => {
     console.log('✅ تم ربط واتساب بنجاح!');
