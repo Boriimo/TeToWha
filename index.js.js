@@ -10,7 +10,7 @@ const qrcode = require('qrcode-terminal');
 // ==========================================
 const apiId = 39184901; 
 const apiHash = "f9401d4b61fa8a8c26b189292264ec8d";
-const TG_CHAT_ID = "-1002188197619"; 
+const TG_CHAT_ID = "-1001556467983"; 
 
 // ==========================================
 // 2. بيانات واتساب
