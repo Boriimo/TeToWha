@@ -86,4 +86,8 @@ waClient.on('ready', () => {
     }, new NewMessage({}));
 
     waClient.initialize();
+    waClient.on('authenticated', (session) => {
+    console.log("إليك مفتاح واتساب الطويل (انسخه):");
+    console.log(JSON.stringify(session));
+});
 })();
