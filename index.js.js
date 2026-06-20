@@ -10,17 +10,17 @@ const qrcode = require('qrcode-terminal');
 // ==========================================
 const apiId = 39184901; 
 const apiHash = "f9401d4b61fa8a8c26b189292264ec8d";
-const TG_CHAT_ID = "-1003935170835"; 
+const TG_CHAT_ID = "-3915527269"; 
 
 // =========================================
 // 2. بيانات واتساب
 // =========================================
-const WA_CHAT_ID = "212679712397@c.us"; 
+const WA_CHAT_ID = "212778303880@c.us"; 
 
 // ==========================================
 // 3. مفتاح الجلسة (تم وضعه في المكان الصحيح)
 // ==========================================
-const stringSession = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAUIIYeilyRn4vg12+fTViiF+NlVSoiVBNI80alfclk6G7P0HZoXKJwqYPmfZ7HHnGTkAEwLwJ17EgqFpOO0M+27evN/pfdHqlvODNTL3ecIUUQvseDs8pjBlZwKwPLp/BmqYatY3yEqnxvLg3/OiJz798O50binici4g+8PI54h8DG9OIhhyjjzMjs//rJzJrusFB5fnxgBP/DOD7JgGU2FF+zDAx5I/DaVhD4cU4T4EIBr2gbi2GPH2rLu1H7LUkGkZ6iChpvRoe4Q3k7s06grS/+xk2jDbO8kqJ7bkLShCktBhOZVEDUMwhfXAh/A73dGPBW8Xi+pJDDbjo9Iwj5CY="); 
+const stringSession = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAUK/F/t7wlbhiVjVv08LOUvzjydl0fgaqqTsd021DzbUzy78un5klFQcog7Nx0yrh4ANxn/il7vok/RPWYEPI1XXgRLGKYfOK5Q0UBx11Vk0bZiFvB5XVsKH3nAK5ZzgkIqMu0YKWxbCur9700i0vwy9fEFKnlS/cN/xhN/v4gyDFPkbgBTJmkprK7+she/9tPjAPiEnOASSprycUuQhE3BKJUVSkMn8DCOdkPeHzp9o6OWpMGjh03tKcMhwALSkR7EPHGe+C0+zkCKE1yMj2Yt1/WIbs/5oIIpyDG57K5ie82jT4gTsOeBpghwfaCPP/+1rbejmCYAt4gqvTGqiwyBg="); 
 
 // تهيئة واتساب (تم إزالة مسار الويندوز لكي يعمل على Railway)
 const waClient = new Client({
