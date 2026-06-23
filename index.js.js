@@ -6,23 +6,18 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 // ==========================================
-// 1. بيانات تلغرام
+// 1. بيانات تلغرام وواتساب الأساسية
 // ==========================================
 const apiId = 39184901; 
 const apiHash = "f9401d4b61fa8a8c26b189292264ec8d";
-const TG_CHAT_ID = "-3915527269"; 
-
-// =========================================
-// 2. بيانات واتساب
-// =========================================
 const WA_CHAT_ID = "212778303880@c.us"; 
 
 // ==========================================
-// 3. مفتاح الجلسة (تم وضعه في المكان الصحيح)
+// 2. مفتاح الجلسة الثابت لتلغرام
 // ==========================================
 const stringSession = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAUK/F/t7wlbhiVjVv08LOUvzjydl0fgaqqTsd021DzbUzy78un5klFQcog7Nx0yrh4ANxn/il7vok/RPWYEPI1XXgRLGKYfOK5Q0UBx11Vk0bZiFvB5XVsKH3nAK5ZzgkIqMu0YKWxbCur9700i0vwy9fEFKnlS/cN/xhN/v4gyDFPkbgBTJmkprK7+she/9tPjAPiEnOASSprycUuQhE3BKJUVSkMn8DCOdkPeHzp9o6OWpMGjh03tKcMhwALSkR7EPHGe+C0+zkCKE1yMj2Yt1/WIbs/5oIIpyDG57K5ie82jT4gTsOeBpghwfaCPP/+1rbejmCYAt4gqvTGqiwyBg="); 
 
-// تهيئة واتساب (تم إزالة مسار الويندوز لكي يعمل على Railway)
+// تهيئة واتساب
 const waClient = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: { 
@@ -31,22 +26,21 @@ const waClient = new Client({
 });
 
 waClient.on('qr', (qr) => {
-       console.log('\n==================================================');
-       console.log('📱 افتح هذا الرابط في متصفحك للحصول على صورة كود QR واضحة:');
-       console.log(`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`);
-       console.log('==================================================\n');
-   });
+    console.log('\n==================================================');
+    console.log('📱 افتح هذا الرابط في متصفحك للحصول على صورة كود QR واضحة:');
+    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`);
+    console.log('==================================================\n');
+});
 
 waClient.on('ready', () => {
     console.log('✅ تم ربط واتساب بنجاح!');
 });
 
-// تهيئة تلغرام وتوصيل الحسابين
+// تهيئة تلغرام
 (async () => {
     console.log("جاري الاتصال بحساب تلغرام...");
     const tgClient = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
 
-    // لن يطلب أرقاماً الآن لأنه يستخدم المفتاح الجاهز
     await tgClient.start({
         onError: (err) => console.log("خطأ في تسجيل الدخول:", err),
     });
@@ -55,17 +49,39 @@ waClient.on('ready', () => {
 
     tgClient.addEventHandler(async (event) => {
         const message = event.message;
-        const chatId = message.chatId ? message.chatId.toString() : "";
         
-        if (!chatId.includes(TG_CHAT_ID.replace("-100", ""))) return;
-
         try {
+            // استخراج بيانات الدردشة والمرسل
+            const chat = await message.getChat();
+            const sender = await message.getSender();
+            
+            let senderName = "تلغرام";
+            
+            if (chat && chat.title) {
+                // الرسالة من مجموعة أو قناة
+                senderName = chat.title;
+                // إضافة اسم الشخص إذا كان في مجموعة (وليس القناة نفسها)
+                if (sender && sender.firstName && sender.firstName !== chat.title) {
+                    senderName += ` - ${sender.firstName}`;
+                }
+            } else if (sender && sender.firstName) {
+                // الرسالة من محادثة شخصية
+                senderName = sender.firstName;
+            } else if (chat && chat.firstName) {
+                senderName = chat.firstName;
+            }
+
+            // تجهيز عنوان الرسالة
+            const messageHeader = `[من: ${senderName}]:\n`;
+
+            // نقل الرسائل النصية
             if (message.message && !message.media) {
-                await waClient.sendMessage(WA_CHAT_ID, `[من تلغرام]:\n${message.message}`);
-                console.log("تم نقل رسالة نصية.");
+                await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}${message.message}`);
+                console.log(`تم نقل رسالة نصية من: ${senderName}`);
             } 
+            // نقل الوسائط والملفات
             else if (message.media) {
-                console.log("جاري تحميل ملف من تلغرام...");
+                console.log(`جاري تحميل ملف من: ${senderName} ونقله...`);
                 const buffer = await tgClient.downloadMedia(message, { workers: 1 });
                 
                 if (buffer) {
@@ -74,10 +90,10 @@ waClient.on('ready', () => {
                     const filename = message.file && message.file.name ? message.file.name : 'telegram_media';
                     
                     const media = new MessageMedia(mimeType, base64Data, filename);
-                    const caption = message.message ? `[من تلغرام]:\n${message.message}` : '[ملف من تلغرام]';
+                    const caption = message.message ? `${messageHeader}${message.message}` : `[ملف من: ${senderName}]`;
                     
                     await waClient.sendMessage(WA_CHAT_ID, media, { caption: caption });
-                    console.log("تم نقل الملف بنجاح.");
+                    console.log(`تم نقل الملف بنجاح من: ${senderName}`);
                 }
             }
         } catch (error) {
