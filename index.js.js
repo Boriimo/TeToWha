@@ -3,7 +3,6 @@ const { StringSession } = require("telegram/sessions");
 const { NewMessage } = require("telegram/events");
 const input = require("input");
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 
 // ==========================================
 // 1. بيانات تلغرام وواتساب الأساسية
@@ -17,14 +16,24 @@ const WA_CHAT_ID = "212778303880@c.us";
 // ==========================================
 const stringSession = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAUK/F/t7wlbhiVjVv08LOUvzjydl0fgaqqTsd021DzbUzy78un5klFQcog7Nx0yrh4ANxn/il7vok/RPWYEPI1XXgRLGKYfOK5Q0UBx11Vk0bZiFvB5XVsKH3nAK5ZzgkIqMu0YKWxbCur9700i0vwy9fEFKnlS/cN/xhN/v4gyDFPkbgBTJmkprK7+she/9tPjAPiEnOASSprycUuQhE3BKJUVSkMn8DCOdkPeHzp9o6OWpMGjh03tKcMhwALSkR7EPHGe+C0+zkCKE1yMj2Yt1/WIbs/5oIIpyDG57K5ie82jT4gTsOeBpghwfaCPP/+1rbejmCYAt4gqvTGqiwyBg="); 
 
-// تهيئة واتساب
+// ==========================================
+// 3. تهيئة واتساب (بإعدادات مضادة للانهيار مخصصة للخوادم)
+// ==========================================
 const waClient = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: { 
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage', // الأهم لمنع انهيار الذاكرة
+            '--disable-gpu' // لتخفيف الضغط على الخادم
+        ],
+        timeout: 60000, // إعطاء المتصفح دقيقة كاملة للفتح
+        protocolTimeout: 300000 // إعطاء 5 دقائق كمهلة لنقل الملفات بدون خطأ
     }
 });
 
+// توليد رابط مخصص لصورة كود QR واضحة وسهلة المسح
 waClient.on('qr', (qr) => {
     console.log('\n==================================================');
     console.log('📱 افتح هذا الرابط في متصفحك للحصول على صورة كود QR واضحة:');
@@ -33,10 +42,12 @@ waClient.on('qr', (qr) => {
 });
 
 waClient.on('ready', () => {
-    console.log('✅ تم ربط واتساب بنجاح!');
+    console.log('✅ تم ربط واتساب بنجاح! البوت الآن جاهز ومستقر.');
 });
 
-// تهيئة تلغرام
+// ==========================================
+// 4. تهيئة تلغرام ونقل الرسائل
+// ==========================================
 (async () => {
     console.log("جاري الاتصال بحساب تلغرام...");
     const tgClient = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
@@ -58,20 +69,16 @@ waClient.on('ready', () => {
             let senderName = "تلغرام";
             
             if (chat && chat.title) {
-                // الرسالة من مجموعة أو قناة
                 senderName = chat.title;
-                // إضافة اسم الشخص إذا كان في مجموعة (وليس القناة نفسها)
                 if (sender && sender.firstName && sender.firstName !== chat.title) {
                     senderName += ` - ${sender.firstName}`;
                 }
             } else if (sender && sender.firstName) {
-                // الرسالة من محادثة شخصية
                 senderName = sender.firstName;
             } else if (chat && chat.firstName) {
                 senderName = chat.firstName;
             }
 
-            // تجهيز عنوان الرسالة
             const messageHeader = `[من: ${senderName}]:\n`;
 
             // نقل الرسائل النصية
