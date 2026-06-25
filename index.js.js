@@ -2,11 +2,13 @@ const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
 const { NewMessage } = require("telegram/events");
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const fs = require('fs');
+const path = require('path');
 
 // ==========================================
 // 🌟 مفتاح التحكم في جلب رسائل اليوم 🌟
+// غيّر القيمة إلى false بعد أن تصل كل الرسائل بنجاح!
 // ==========================================
-// غيّر هذه القيمة إلى false بعد أن تصل الرسائل لكي لا تتكرر مستقبلاً!
 const FETCH_TODAY_MESSAGES = true; 
 
 // ==========================================
@@ -38,15 +40,15 @@ const waClient = new Client({
             '--no-zygote', '--disable-background-timer-throttling', 
             '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding' 
         ],
-        timeout: 60000, 
-        protocolTimeout: 300000 
+        timeout: 90000, // زيادة وقت تهيئة المتصفح
+        protocolTimeout: 600000 // المهلة القصوى 10 دقائق
     }
 });
 
 waClient.on('ready', () => {
     console.log('✅ تم ربط واتساب بنجاح!');
     isWhatsAppReady = true;
-    processQueue(); // بدء تشغيل الطابور فور جاهزية واتساب
+    processQueue(); 
 });
 
 waClient.on('disconnected', (reason) => {
@@ -56,31 +58,28 @@ waClient.on('disconnected', (reason) => {
 });
 
 // ==========================================
-// 3. نظام الطابور (Queue System)
+// 3. نظام الطابور (مع التخزين في القرص الصلب لتوفير الرام)
 // ==========================================
 const messageQueue = [];
 let isProcessingQueue = false;
 
 async function processQueue() {
     if (isProcessingQueue || messageQueue.length === 0 || !isWhatsAppReady) return;
-    
     isProcessingQueue = true; 
 
     while (messageQueue.length > 0) {
         const task = messageQueue.shift(); 
         try {
             await task(); 
-            // استراحة ثانيتين بين كل رسالة لحماية الخادم
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log('⏳ استراحة 10 ثوانٍ لتنظيف الذاكرة...');
+            await new Promise(resolve => setTimeout(resolve, 10000)); // استراحة طويلة إجبارية
         } catch (error) {
             console.error('❌ خطأ في معالجة الرسالة:', error.message);
         }
     }
-    
     isProcessingQueue = false; 
 }
 
-// دالة لتجهيز الرسالة وإضافتها للطابور
 function enqueueMessage(message, tgClient) {
     messageQueue.push(async () => {
         try {
@@ -88,48 +87,51 @@ function enqueueMessage(message, tgClient) {
             const sender = await message.getSender();
             
             let senderName = "تلغرام";
-            if (chat && chat.title) {
-                senderName = chat.title;
-                if (sender && sender.firstName && sender.firstName !== chat.title) senderName += ` - ${sender.firstName}`;
-            } else if (sender && sender.firstName) senderName = sender.firstName;
-            else if (chat && chat.firstName) senderName = chat.firstName;
+            if (chat && chat.title) senderName = chat.title;
 
             const messageHeader = `[من: ${senderName}]:\n`;
 
             if (message.message && !message.media) {
                 await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}${message.message}`);
-                console.log(`تم إرسال نص من: ${senderName}`);
+                console.log(`✅ تم إرسال نص من: ${senderName}`);
             } 
             else if (message.media) {
                 const fileSize = message.file ? message.file.size : 0;
-                const maxSizeInBytes = 60 * 1024 * 1024; 
+                const maxSizeInBytes = 25 * 1024 * 1024; // الحد الأقصى 25 ميجا للخادم المجاني
                 const whatsappVideoLimit = 15 * 1024 * 1024; 
 
                 if (fileSize > maxSizeInBytes) {
                     const sizeInMB = (fileSize / (1024 * 1024)).toFixed(2);
                     console.log(`⚠️ تم تخطي ملف ضخم (${sizeInMB} MB).`);
-                    await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* ملف كبير جداً (${sizeInMB} MB) موجود في تلغرام.`);
+                    await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* يوجد ملف كبير جداً (${sizeInMB} MB). يرجى مشاهدته من تلغرام.`);
                     return; 
                 }
 
-                console.log(`جاري تحميل ملف من: ${senderName}...`);
-                const buffer = await tgClient.downloadMedia(message, { workers: 1 });
+                console.log(`⬇️ جاري تحميل ملف (${(fileSize / (1024 * 1024)).toFixed(2)} MB) إلى القرص الصلب...`);
+                let buffer = await tgClient.downloadMedia(message, { workers: 1 });
                 
                 if (buffer) {
-                    const base64Data = buffer.toString('base64');
                     const mimeType = message.file && message.file.mimeType ? message.file.mimeType : 'application/octet-stream';
-                    let filename = message.file && message.file.name ? message.file.name : 'telegram_media';
+                    let filename = message.file && message.file.name ? message.file.name : `media_${Date.now()}`;
                     
                     if (!filename.includes('.')) {
                         if (mimeType.includes('mp4')) filename += '.mp4';
-                        else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) filename += '.jpg';
+                        else if (mimeType.includes('jpg') || mimeType.includes('jpeg')) filename += '.jpg';
                         else if (mimeType.includes('png')) filename += '.png';
                         else if (mimeType.includes('pdf')) filename += '.pdf';
                         else if (mimeType.includes('ogg')) filename += '.ogg';
                         else if (mimeType.includes('audio')) filename += '.mp3';
                     }
                     
-                    const media = new MessageMedia(mimeType, base64Data, filename);
+                    // 1. حفظ الملف في القرص الصلب للخادم
+                    const filePath = path.join(__dirname, filename);
+                    fs.writeFileSync(filePath, buffer);
+                    
+                    // 2. إفراغ الذاكرة العشوائية فوراً
+                    buffer = null; 
+                    
+                    // 3. قراءة الملف بأمان من القرص الصلب
+                    const media = MessageMedia.fromFilePath(filePath);
                     const caption = message.message ? `${messageHeader}${message.message}` : `[ملف من: ${senderName}]`;
                     const sendOptions = { caption: caption };
                     
@@ -139,8 +141,15 @@ function enqueueMessage(message, tgClient) {
                         sendOptions.sendMediaAsDocument = true; 
                     }
                     
+                    console.log(`📤 جاري إرسال الملف لواتساب...`);
                     await waClient.sendMessage(WA_CHAT_ID, media, sendOptions);
-                    console.log(`تم إرسال ملف بنجاح!`);
+                    console.log(`✅ تم إرسال الملف بنجاح!`);
+                    
+                    // 4. حذف الملف من القرص الصلب لتوفير المساحة
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        console.log(`🗑️ تم حذف الملف من الخادم لتنظيف المساحة.`);
+                    }
                 }
             }
         } catch (error) {
@@ -163,14 +172,12 @@ function enqueueMessage(message, tgClient) {
     });
     console.log("✅ تم الدخول لحساب تلغرام بنجاح!");
 
-    // جلب رسائل اليوم إذا كان المفتاح مفعلاً
     if (FETCH_TODAY_MESSAGES) {
         console.log("🔍 جاري جلب رسائل اليوم الفائتة...");
         try {
             const dialogs = await tgClient.getDialogs({ limit: 15 });
             let allTodaysMessages = [];
             
-            // تحديد بداية اليوم بتوقيت السيرفر
             const startOfDay = new Date();
             startOfDay.setHours(0, 0, 0, 0);
             const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
@@ -181,7 +188,6 @@ function enqueueMessage(message, tgClient) {
                 allTodaysMessages.push(...todaysMsgs);
             }
 
-            // ترتيب الرسائل من الأقدم للأحدث لكي تصل بشكل منطقي
             allTodaysMessages.sort((a, b) => a.date - b.date);
 
             if (allTodaysMessages.length > 0) {
@@ -197,7 +203,6 @@ function enqueueMessage(message, tgClient) {
         }
     }
 
-    // الاستماع للرسائل الجديدة
     tgClient.addEventHandler(async (event) => {
         enqueueMessage(event.message, tgClient);
     }, new NewMessage({}));
