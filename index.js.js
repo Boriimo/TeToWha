@@ -37,7 +37,7 @@ const waClient = new Client({
 
 waClient.on('ready', async () => {
     console.log('✅ تم ربط واتساب بنجاح! سيتم إعطاء المتصفح 5 ثوانٍ للاستقرار...');
-    await new Promise(r => setTimeout(r, 5000)); // إعطاء واتساب فرصة لتحميل المحادثات
+    await new Promise(r => setTimeout(r, 5000));
     isWhatsAppReady = true;
     processQueue(); 
 });
@@ -48,9 +48,6 @@ waClient.on('disconnected', (reason) => {
     waClient.initialize();
 });
 
-// ==========================================
-// أداة الحماية الشاملة من التجميد (تعمل على النصوص والملفات)
-// ==========================================
 const safeExecute = (promise, ms = 120000) => {
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
@@ -98,7 +95,6 @@ function enqueueMessage(message, tgClient) {
             if (message.message && !message.media) {
                 console.log(`📤 جاري إرسال نص من: ${senderName}...`);
                 try {
-                    // حماية إرسال النصوص من التجميد
                     await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}${message.message}`), 60000);
                     console.log(`✅ تم إرسال نص بنجاح!`);
                 } catch (e) {
@@ -107,12 +103,14 @@ function enqueueMessage(message, tgClient) {
             } 
             else if (message.media) {
                 const fileSize = message.file ? message.file.size : 0;
-                const maxSizeInBytes = 15 * 1024 * 1024; 
+                
+                // 🛑 السقف الجديد الصارم جداً: 10 ميجابايت كحد أقصى للخادم المجاني!
+                const maxSizeInBytes = 10 * 1024 * 1024; 
                 
                 if (fileSize > maxSizeInBytes) {
                     const sizeInMB = (fileSize / (1024 * 1024)).toFixed(2);
-                    console.log(`⚠️ تخطي ملف (${sizeInMB} MB) لثقله.`);
-                    await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* يوجد ملف (${sizeInMB} MB). شاهده في تلغرام.`), 60000).catch(()=>{});
+                    console.log(`⚠️ تخطي ملف (${sizeInMB} MB) لثقله وحماية الخادم من الشلل.`);
+                    await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* يوجد ملف أو فيديو (${sizeInMB} MB) يتجاوز سعة البوت. يرجى مشاهدته من تلغرام.`), 60000).catch(()=>{});
                     return; 
                 }
 
@@ -184,8 +182,6 @@ function enqueueMessage(message, tgClient) {
         try {
             const dialogs = await tgClient.getDialogs({ limit: 15 });
             let allTodaysMessages = [];
-            
-            // التعديل: جلب آخر 24 ساعة لتفادي مشكلة منتصف الليل!
             const startTimestamp = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
 
             for (const dialog of dialogs) {
