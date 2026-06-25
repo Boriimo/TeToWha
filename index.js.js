@@ -6,9 +6,9 @@ const fs = require('fs');
 const path = require('path');
 
 // ==========================================
-// 🌟 مفتاح جلب رسائل اليوم (اتركه true ليعيد المحاولة)
+// 🌟 مفتاح جلب الرسائل السابقة 🌟
 // ==========================================
-const FETCH_TODAY_MESSAGES = true; 
+const FETCH_MISSED_MESSAGES = true; 
 
 process.on('unhandledRejection', (reason) => console.error('⚠️ خطأ غير متوقع:', reason));
 process.on('uncaughtException', (error) => console.error('⚠️ خطأ جسيم:', error));
@@ -35,8 +35,9 @@ const waClient = new Client({
     }
 });
 
-waClient.on('ready', () => {
-    console.log('✅ تم ربط واتساب بنجاح!');
+waClient.on('ready', async () => {
+    console.log('✅ تم ربط واتساب بنجاح! سيتم إعطاء المتصفح 5 ثوانٍ للاستقرار...');
+    await new Promise(r => setTimeout(r, 5000)); // إعطاء واتساب فرصة لتحميل المحادثات
     isWhatsAppReady = true;
     processQueue(); 
 });
@@ -48,9 +49,9 @@ waClient.on('disconnected', (reason) => {
 });
 
 // ==========================================
-// أداة "مؤقت الإلغاء الذاتي" لكي لا يتجمد البوت أبداً
+// أداة الحماية الشاملة من التجميد (تعمل على النصوص والملفات)
 // ==========================================
-const promiseTimeout = (promise, ms) => {
+const safeExecute = (promise, ms = 120000) => {
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), ms);
@@ -81,8 +82,13 @@ async function processQueue() {
 function enqueueMessage(message, tgClient) {
     messageQueue.push(async () => {
         try {
-            const chat = await message.getChat();
-            const sender = await message.getSender();
+            let chat, sender;
+            try {
+                chat = await safeExecute(message.getChat(), 20000);
+                sender = await safeExecute(message.getSender(), 20000);
+            } catch (e) {
+                console.log('⚠️ تأخر في جلب بيانات المرسل، سيتم الاستمرار...');
+            }
             
             let senderName = "تلغرام";
             if (chat && chat.title) senderName = chat.title;
@@ -90,22 +96,34 @@ function enqueueMessage(message, tgClient) {
             const messageHeader = `[من: ${senderName}]:\n`;
 
             if (message.message && !message.media) {
-                await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}${message.message}`);
-                console.log(`✅ تم إرسال نص من: ${senderName}`);
+                console.log(`📤 جاري إرسال نص من: ${senderName}...`);
+                try {
+                    // حماية إرسال النصوص من التجميد
+                    await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}${message.message}`), 60000);
+                    console.log(`✅ تم إرسال نص بنجاح!`);
+                } catch (e) {
+                    console.log(`❌ تجمد المتصفح أثناء إرسال النص. تم الإلغاء للمرور للتالي.`);
+                }
             } 
             else if (message.media) {
                 const fileSize = message.file ? message.file.size : 0;
-                const maxSizeInBytes = 15 * 1024 * 1024; // الحد الآمن جداً لخادم مجاني هو 15 ميجا
+                const maxSizeInBytes = 15 * 1024 * 1024; 
                 
                 if (fileSize > maxSizeInBytes) {
                     const sizeInMB = (fileSize / (1024 * 1024)).toFixed(2);
-                    console.log(`⚠️ تخطي ملف (${sizeInMB} MB) من البداية لثقله.`);
-                    await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* يوجد ملف (${sizeInMB} MB) يتجاوز قدرة الخادم. يرجى مشاهدته من تلغرام.`);
+                    console.log(`⚠️ تخطي ملف (${sizeInMB} MB) لثقله.`);
+                    await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* يوجد ملف (${sizeInMB} MB). شاهده في تلغرام.`), 60000).catch(()=>{});
                     return; 
                 }
 
                 console.log(`⬇️ جاري تحميل ملف (${(fileSize / (1024 * 1024)).toFixed(2)} MB) للقرص الصلب...`);
-                let buffer = await tgClient.downloadMedia(message, { workers: 1 });
+                let buffer;
+                try {
+                    buffer = await safeExecute(tgClient.downloadMedia(message, { workers: 1 }), 180000);
+                } catch(e) {
+                    console.log(`❌ فشل تحميل الملف من تلغرام.`);
+                    return;
+                }
                 
                 if (buffer) {
                     const mimeType = message.file && message.file.mimeType ? message.file.mimeType : 'application/octet-stream';
@@ -128,29 +146,20 @@ function enqueueMessage(message, tgClient) {
                     const caption = message.message ? `${messageHeader}${message.message}` : `[ملف من: ${senderName}]`;
                     const sendOptions = { caption: caption };
                     
-                    if (mimeType.includes('audio') || mimeType.includes('ogg')) {
-                        sendOptions.sendAudioAsVoice = true; 
-                    } else {
-                        sendOptions.sendMediaAsDocument = true; 
-                    }
+                    if (mimeType.includes('audio') || mimeType.includes('ogg')) sendOptions.sendAudioAsVoice = true; 
+                    else sendOptions.sendMediaAsDocument = true; 
                     
-                    console.log(`📤 جاري إرسال الملف (مهلة أقصاها دقيقتين وإلا سيتم تخطيه)...`);
-                    
+                    console.log(`📤 جاري إرسال الملف (مهلة دقيقتين)...`);
                     try {
-                        // إعطاء المتصفح دقيقتين فقط للمحاولة، وإلا يلغي العملية ويكمل الطابور
-                        await promiseTimeout(waClient.sendMessage(WA_CHAT_ID, media, sendOptions), 120000);
+                        await safeExecute(waClient.sendMessage(WA_CHAT_ID, media, sendOptions), 120000);
                         console.log(`✅ تم إرسال الملف بنجاح!`);
                     } catch (sendError) {
-                        if (sendError.message === 'TIMEOUT_EXCEEDED') {
-                            console.log(`❌ فشل النقل: الملف تسبب في تجميد متصفح واتساب. تم الإلغاء للمرور للتالي.`);
-                            await waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ *[تنبيه]:* تعذر نقل ملف بحجم (${(fileSize / (1024 * 1024)).toFixed(2)} MB) لأنه جمد الخادم. شاهده في تلغرام.`);
-                        } else {
-                            throw sendError;
-                        }
+                        console.log(`❌ فشل النقل: المتصفح تجمد. تم التخطي.`);
+                        await safeExecute(waClient.sendMessage(WA_CHAT_ID, `${messageHeader}⚠️ تعذر نقل ملف (${(fileSize / (1024 * 1024)).toFixed(2)} MB).`), 60000).catch(()=>{});
                     } finally {
                         if (fs.existsSync(filePath)) {
                             fs.unlinkSync(filePath);
-                            console.log(`🗑️ تم حذف الملف من الخادم.`);
+                            console.log(`🗑️ تم حذف الملف لتنظيف المساحة.`);
                         }
                     }
                 }
@@ -170,14 +179,14 @@ function enqueueMessage(message, tgClient) {
     await tgClient.start({ onError: (err) => console.log("خطأ:", err) });
     console.log("✅ تم الدخول لحساب تلغرام بنجاح!");
 
-    if (FETCH_TODAY_MESSAGES) {
-        console.log("🔍 جاري جلب رسائل اليوم الفائتة...");
+    if (FETCH_MISSED_MESSAGES) {
+        console.log("🔍 جاري جلب رسائل آخر 24 ساعة الفائتة...");
         try {
             const dialogs = await tgClient.getDialogs({ limit: 15 });
             let allTodaysMessages = [];
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
+            
+            // التعديل: جلب آخر 24 ساعة لتفادي مشكلة منتصف الليل!
+            const startTimestamp = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
 
             for (const dialog of dialogs) {
                 const messages = await tgClient.getMessages(dialog.id, { limit: 50 });
@@ -187,7 +196,7 @@ function enqueueMessage(message, tgClient) {
             allTodaysMessages.sort((a, b) => a.date - b.date);
 
             if (allTodaysMessages.length > 0) {
-                console.log(`📥 جاري إضافة ${allTodaysMessages.length} رسالة للطابور...`);
+                console.log(`📥 تم العثور على ${allTodaysMessages.length} رسالة. جاري إضافتها للطابور...`);
                 for (const msg of allTodaysMessages) enqueueMessage(msg, tgClient);
             }
         } catch (err) {
