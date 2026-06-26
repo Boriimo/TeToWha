@@ -8,7 +8,7 @@ const path = require('path');
 // ==========================================
 // 🌟 مفتاح جلب الرسائل السابقة 🌟
 // ==========================================
-const FETCH_MISSED_MESSAGES = true; 
+const FETCH_MISSED_MESSAGES = false; 
 
 process.on('unhandledRejection', (reason) => console.error('⚠️ خطأ غير متوقع:', reason));
 process.on('uncaughtException', (error) => console.error('⚠️ خطأ جسيم:', error));
